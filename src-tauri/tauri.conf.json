@@ -4,10 +4,8 @@
   "version": "1.0.0",
   "identifier": "id.sahamlens.pro",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "devUrl": "https://sahamlens.id",
+    "frontendDist": "https://sahamlens.id"
   },
   "app": {
     "windows": [
@@ -19,17 +17,14 @@
         "minHeight": 700,
         "resizable": true,
         "fullscreen": false,
-        "decorations": false,
+        "decorations": true,
         "transparent": false,
         "theme": "Dark"
       }
     ],
-    "security": {
-      "csp": null
-    },
     "trayIcon": {
       "iconPath": "icons/icon.png",
-      "tooltip": "SahamLens Pro Terminal"
+      "tooltip": "SahamLens Desktop"
     }
   },
   "bundle": {
