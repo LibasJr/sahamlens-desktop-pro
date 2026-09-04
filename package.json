@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "check": "node scripts/audit-shell.mjs && cargo check --manifest-path src-tauri/Cargo.toml"
+    "check": "node scripts/audit-shell.mjs && cargo check --manifest-path src-tauri/Cargo.toml",
+    "tauri": "tauri"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.0"

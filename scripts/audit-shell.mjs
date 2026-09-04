@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
 const capability = JSON.parse(readFileSync('src-tauri/capabilities/default.json', 'utf8'));
+const packageManifest = JSON.parse(readFileSync('package.json', 'utf8'));
 const expectedOrigin = 'https://sahamlens.id';
 
 assert.equal(config.build.devUrl, expectedOrigin, 'Development must load the canonical web app');
@@ -14,5 +15,6 @@ assert.deepEqual(capability.permissions, ['core:default'], 'Keep the local capab
 
 assert.equal(existsSync('src/main.tsx'), false, 'Do not reintroduce a second, drifting desktop frontend');
 assert.equal(existsSync('index.html'), false, 'The shell must not bundle a duplicate HTML entry point');
+assert.equal(packageManifest.scripts?.tauri, 'tauri', 'tauri-action requires the npm tauri script');
 
 console.log('Desktop shell parity and IPC isolation checks passed.');
