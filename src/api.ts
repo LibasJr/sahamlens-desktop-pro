@@ -1,3 +1,5 @@
+import { displayText, marketRegimeText, numericValue } from './normalize';
+
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://sahamlens.id').replace(/\/+$/, '');
 
 const TOKEN_KEY = 'sahamlens.pro.token';
@@ -133,9 +135,10 @@ export function getSavedSession(): UserSession {
     const userJson = localStorage.getItem(USER_KEY);
     if (token && userJson) {
       const parsed = JSON.parse(userJson);
+      const role = displayText(parsed.role, 'user');
       return {
-        email: parsed.email || '',
-        role: parsed.role || 'user',
+        email: displayText(parsed.email),
+        role: role === 'admin' || role === 'guest' ? role : 'user',
         token,
         isPro: Boolean(parsed.isPro || parsed.is_pro || parsed.hasProAccess),
         hasProAccess: Boolean(parsed.hasProAccess || parsed.isPro),
@@ -177,19 +180,20 @@ export async function loginDesktop(email: string, password: string): Promise<{ s
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      return { success: false, error: data.error || `Login gagal (${res.status})` };
+      return { success: false, error: displayText(data.error, `Login gagal (${res.status})`) };
     }
 
     const body = data.body || data;
-    const token = body.token || data.token;
+    const token = displayText(body.token || data.token);
     if (!token) {
       return { success: false, error: 'Token login tidak diterima dari server.' };
     }
 
+    const role = displayText(body.role, 'user');
     const session: UserSession = {
-      email: body.email || email,
+      email: displayText(body.email, email),
       token,
-      role: body.role || 'user',
+      role: role === 'admin' || role === 'guest' ? role : 'user',
       isPro: Boolean(body.isPro || body.hasProAccess),
       hasProAccess: Boolean(body.hasProAccess || body.isPro),
     };
@@ -213,34 +217,42 @@ export async function logoutDesktop(): Promise<void> {
    MARKET DATA & SCREENER APIS
    ========================================================================== */
 
-export async function getMarketPulse(): Promise<MarketPulse> {
-  const res = await safeFetch('/api/market-pulse');
-  if (!res.ok) throw new Error(`Market pulse failed: ${res.status}`);
-  const data = await res.json();
+export function normalizeMarketPulse(data: any): MarketPulse {
   const raw = data.data || data;
-
-  const rawIndices = raw.indices || raw.marketSummary?.indices || [];
+  const rawIndices = Array.isArray(raw.indices)
+    ? raw.indices
+    : Array.isArray(raw.marketSummary?.indices)
+      ? raw.marketSummary.indices
+      : [];
   const indices: IndexItem[] = rawIndices.map((item: any) => ({
-    symbol: item.symbol || item.ticker || 'INDEX',
-    name: item.name || item.symbol || '',
-    finalPrice: Number(item.finalPrice || item.price || item.close || 0),
-    change: Number(item.changePct || item.change || 0),
-    pointChange: Number(item.pointChange || 0),
-    sparkline: Array.isArray(item.sparkline) && item.sparkline.length > 0 ? item.sparkline : [100, 101, 99, 102, 101, 103],
+    symbol: displayText(item.symbol || item.ticker, 'INDEX'),
+    name: displayText(item.name || item.symbol),
+    finalPrice: numericValue(item.finalPrice ?? item.price ?? item.close),
+    change: numericValue(item.changePct ?? item.change),
+    pointChange: numericValue(item.pointChange),
+    sparkline: Array.isArray(item.sparkline) && item.sparkline.length > 0
+      ? item.sparkline.map((point: unknown) => numericValue(point))
+      : [100, 101, 99, 102, 101, 103],
   }));
 
   const breadth = raw.breadth || raw.marketBreadth || {};
   return {
     indices,
-    marketRegime: raw.regime || raw.marketRegime || 'Bull Expansion (Akumulasi)',
-    advances: Number(breadth.advances || 284),
-    declines: Number(breadth.declines || 192),
-    unchanged: Number(breadth.unchanged || 215),
+    marketRegime: marketRegimeText(raw, 'Bull Expansion (Akumulasi)'),
+    advances: numericValue(breadth.advances ?? breadth.advancing, 284),
+    declines: numericValue(breadth.declines ?? breadth.declining, 192),
+    unchanged: numericValue(breadth.unchanged, 215),
     fearGreed: {
-      score: Number(raw.fearGreed?.score || 68),
-      label: String(raw.fearGreed?.label || 'Greed'),
+      score: numericValue(raw.fearGreed?.score ?? raw.marketRegime?.score, 68),
+      label: displayText(raw.fearGreed ?? raw.marketRegime?.fearGreed, 'Greed'),
     },
   };
+}
+
+export async function getMarketPulse(): Promise<MarketPulse> {
+  const res = await safeFetch('/api/market-pulse');
+  if (!res.ok) throw new Error(`Market pulse failed: ${res.status}`);
+  return normalizeMarketPulse(await res.json());
 }
 
 export async function getScreener(profile?: string): Promise<ScreenerStock[]> {
@@ -249,49 +261,62 @@ export async function getScreener(profile?: string): Promise<ScreenerStock[]> {
   if (!res.ok) throw new Error(`Screener failed: ${res.status}`);
   const data = await res.json();
 
-  const rawList: any[] = data.data?.stocks || data.stocks || (Array.isArray(data) ? data : []);
-  return rawList.map((item) => ({
-    ticker: item.ticker || item.symbol || 'IDX',
-    name: item.name || item.companyName || item.ticker,
-    sector: item.sector || 'Umum',
-    price: Number(item.price || item.lastPrice || 0),
-    changePct: Number(item.changePct || item.change || 0),
-    pe: Number(item.pe || item.per || 12),
-    pbv: Number(item.pbv || 1.5),
-    roe: Number(item.roe || 15),
-    dy: Number(item.dy || item.dividendYield || 0),
-    marketCap: Number(item.marketCap || 0),
-    bandarmology: item.bandarmology || (item.changePct > 1 ? 'Big Acc' : 'Neutral'),
-    signal: item.signal || (item.roe > 18 ? 'Value Buy' : 'Swing Buy'),
-    cl1: item.cl1 ? Number(item.cl1) : undefined,
-    tp1: item.tp1 ? Number(item.tp1) : undefined,
-    rr: item.rr ? Number(item.rr) : undefined,
-  }));
+  const candidates = data.data?.stocks
+    ?? data.data?.analysis?.top_10_stocks
+    ?? data.stocks
+    ?? data.analysis?.top_10_stocks
+    ?? data;
+  const rawList: any[] = Array.isArray(candidates) ? candidates : [];
+  return rawList.map((item) => {
+    const changePct = numericValue(item.changePct ?? item.change);
+    const roe = numericValue(item.roe, 15);
+    return {
+      ticker: displayText(item.ticker || item.symbol, 'IDX').replace(/\.JK$/i, ''),
+      name: displayText(item.name || item.companyName || item.ticker, 'Emiten IDX'),
+      sector: displayText(item.sector, 'Umum'),
+      price: numericValue(item.price ?? item.lastPrice ?? item.entry),
+      changePct,
+      pe: numericValue(item.pe ?? item.per, 12),
+      pbv: numericValue(item.pbv, 1.5),
+      roe,
+      dy: numericValue(item.dy ?? item.dividendYield ?? item.div_yield),
+      marketCap: numericValue(item.marketCap ?? item.market_cap),
+      bandarmology: displayText(item.bandarmology, changePct > 1 ? 'Big Acc' : 'Neutral') as ScreenerStock['bandarmology'],
+      signal: displayText(item.signal, roe > 18 ? 'Value Buy' : 'Swing Buy') as ScreenerStock['signal'],
+      cl1: item.cl1 == null ? undefined : numericValue(item.cl1),
+      tp1: item.tp1 == null ? undefined : numericValue(item.tp1),
+      rr: item.rr == null ? undefined : numericValue(item.rr),
+    };
+  });
 }
 
 export async function getBreakoutRadar(): Promise<ScreenerStock[]> {
   const res = await safeFetch('/api/breakout-radar');
   if (!res.ok) throw new Error(`Radar failed: ${res.status}`);
   const data = await res.json();
-  const rawList: any[] = data.candidates || data.data?.candidates || [];
+  const candidates = data.candidates ?? data.data?.candidates ?? data.data;
+  const rawList: any[] = Array.isArray(candidates) ? candidates : [];
 
-  return rawList.map((item) => ({
-    ticker: item.symbol || item.ticker,
-    name: item.companyName || item.name || item.symbol,
-    sector: item.sector || 'Teknikal',
-    price: Number(item.price || item.close || 0),
-    changePct: Number(item.changePct || 0),
-    pe: 14.5,
-    pbv: 1.8,
-    roe: 16.0,
-    dy: 3.5,
-    marketCap: Number(item.marketCap || 15000000000000),
-    bandarmology: 'Big Acc',
-    signal: 'Breakout',
-    cl1: item.cl1 ? Number(item.cl1) : Math.round((item.price || 1000) * 0.96),
-    tp1: item.tp1 ? Number(item.tp1) : Math.round((item.price || 1000) * 1.08),
-    rr: item.rr ? Number(item.rr) : 2.0,
-  }));
+  return rawList.map((item) => {
+    const price = numericValue(item.price ?? item.close, 1000);
+    return {
+      ticker: displayText(item.symbol || item.ticker, 'IDX').replace(/\.JK$/i, ''),
+      name: displayText(item.companyName || item.name || item.symbol, 'Emiten IDX'),
+      sector: displayText(item.sector, 'Teknikal'),
+      price,
+      changePct: numericValue(item.changePct ?? item.change),
+      pe: 14.5,
+      pbv: 1.8,
+      roe: 16.0,
+      dy: 3.5,
+      marketCap: numericValue(item.marketCap, 15000000000000),
+      bandarmology: 'Big Acc' as const,
+      signal: 'Breakout' as const,
+      cl1: item.cl1 == null ? Math.round(price * 0.96) : numericValue(item.cl1),
+      tp1: item.tp1 == null ? Math.round(price * 1.08) : numericValue(item.tp1),
+      rr: item.rr == null ? 2.0 : numericValue(item.rr, 2.0),
+    };
+  });
 }
 
 export async function getStockFundamental(symbol: string): Promise<FundamentalData> {
@@ -299,41 +324,46 @@ export async function getStockFundamental(symbol: string): Promise<FundamentalDa
   if (!res.ok) throw new Error(`Fundamental failed: ${res.status}`);
   const data = await res.json();
   const profile = data.profile || {};
-  const metrics = data.metrics || {};
-  const moat = data.moat || {};
-  const earnings = data.earnings || [];
+  const stock = data.stock || {};
+  const metrics = data.metrics || data.fundamentals || {};
+  const moat = data.moat || data.moatDurability || {};
+  const earnings = data.earnings || data.annualEarnings?.observations || [];
 
-  const revenue4Y = earnings.map((e: any) => ({
-    year: String(e.year || e.fiscalYear || '2025'),
-    revenue: Number(e.revenue || 0),
-    netIncome: Number(e.netIncome || e.netProfit || 0),
+  const revenue4Y = (Array.isArray(earnings) ? earnings : []).map((e: any) => ({
+    year: displayText(e.year ?? e.fiscalYear, '2025'),
+    revenue: numericValue(e.revenue),
+    netIncome: numericValue(e.netIncome ?? e.netProfit),
   }));
 
-  const durabilityChecks = (moat.checklist || []).map((c: any) => ({
-    label: c.label || c.name || 'Check',
-    passed: Boolean(c.passed ?? c.ok),
-    detail: c.detail || c.description || '',
+  const checks = moat.checklist || moat.checks || [];
+  const durabilityChecks = (Array.isArray(checks) ? checks : []).map((c: any) => ({
+    label: displayText(c.label || c.name, 'Check'),
+    passed: c.verdict ? c.verdict === 'SUPPORTIVE' : Boolean(c.passed ?? c.ok),
+    detail: displayText(c.detail || c.description),
   }));
+  const currentPrice = numericValue(metrics.price ?? profile.price ?? stock.current_price ?? data.price);
+  const roe = numericValue(metrics.roe ?? data.annualEarnings?.normalizedRoePct, 18);
+  const sector = displayText(profile.sector, 'Keuangan');
 
   return {
-    ticker: symbol,
-    companyName: profile.name || profile.companyName || symbol,
-    sector: profile.sector || 'Keuangan',
-    industry: profile.industry || 'Bank',
-    currentPrice: Number(metrics.price || profile.price || 0),
-    marketCap: Number(metrics.marketCap || 0),
-    pe: Number(metrics.pe || metrics.per || 14),
-    pbv: Number(metrics.pbv || 2.0),
-    roe: Number(metrics.roe || 18),
-    dy: Number(metrics.dy || metrics.dividendYield || 4),
-    netMargin: Number(metrics.netMargin || 25),
+    ticker: displayText(data.ticker || stock.symbol || symbol, symbol).replace(/\.JK$/i, ''),
+    companyName: displayText(profile.name || profile.companyName || stock.name, symbol),
+    sector,
+    industry: displayText(profile.industry, 'Bank'),
+    currentPrice,
+    marketCap: numericValue(metrics.marketCap),
+    pe: numericValue(metrics.pe ?? metrics.per ?? metrics.trailingPE, 14),
+    pbv: numericValue(metrics.pbv ?? metrics.priceToBook, 2.0),
+    roe: roe > 0 && roe < 1 ? roe * 100 : roe,
+    dy: numericValue(metrics.dy ?? metrics.dividendYield, 4) * (numericValue(metrics.dy ?? metrics.dividendYield, 4) < 1 ? 100 : 1),
+    netMargin: numericValue(metrics.netMargin ?? metrics.profitMargins, 25) * (numericValue(metrics.netMargin ?? metrics.profitMargins, 25) < 1 ? 100 : 1),
     revenue4Y,
-    moatRating: moat.rating || (metrics.roe > 18 ? 'Wide' : 'Narrow'),
-    moatScore: Number(moat.score || 85),
+    moatRating: moat.status === 'TAHAN' ? 'Wide' : roe > 18 ? 'Wide' : 'Narrow',
+    moatScore: numericValue(moat.score ?? data.fundamentalQuality?.pct, 85),
     durabilityChecks,
-    intrinsicValue: Number(data.intrinsicValue || (metrics.price ? metrics.price * 1.2 : 0)),
-    valuationModel: profile.sector === 'Keuangan' ? 'DDM' : 'DCF',
-    marginOfSafety: Number(data.marginOfSafety || 15),
+    intrinsicValue: numericValue(data.intrinsicValue, currentPrice * 1.2),
+    valuationModel: sector.toLowerCase().includes('financial') || sector.toLowerCase().includes('keuangan') ? 'DDM' : 'DCF',
+    marginOfSafety: numericValue(data.marginOfSafety, 15),
   };
 }
 
@@ -347,14 +377,14 @@ export async function getStockChart(symbol: string): Promise<ChartCandle[]> {
   const res = await safeFetch(`/api/public-chart/${symbol}`);
   if (!res.ok) return [];
   const data = await res.json();
-  const history = data.history || (Array.isArray(data) ? data : []);
+  const history = Array.isArray(data.history) ? data.history : Array.isArray(data) ? data : [];
   return history.map((h: any) => ({
-    time: h.time || h.date,
-    open: Number(h.open || h.close),
-    high: Number(h.high || h.close),
-    low: Number(h.low || h.close),
-    close: Number(h.close),
-    volume: Number(h.volume || 0),
+    time: displayText(h.time || h.date),
+    open: numericValue(h.open ?? h.close),
+    high: numericValue(h.high ?? h.close),
+    low: numericValue(h.low ?? h.close),
+    close: numericValue(h.close),
+    volume: numericValue(h.volume),
   }));
 }
 
@@ -363,10 +393,11 @@ export async function searchTickers(query: string): Promise<{ symbol: string; na
   const res = await safeFetch(`/api/tickers/search?q=${encodeURIComponent(query.trim())}`);
   if (!res.ok) return [];
   const data = await res.json();
-  const items = data.data?.items || data.items || [];
+  const candidates = data.data?.items ?? data.items;
+  const items = Array.isArray(candidates) ? candidates : [];
   return items.map((i: any) => ({
-    symbol: i.symbol || i.ticker,
-    name: i.name || i.companyName || '',
+    symbol: displayText(i.symbol || i.ticker).replace(/\.JK$/i, ''),
+    name: displayText(i.name || i.companyName),
   }));
 }
 
@@ -390,10 +421,10 @@ export async function sendChat(prompt: string, symbol: string, contextNote?: str
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      return { content: '', error: data.error || data.content || `LensAI gagal (${res.status})` };
+      return { content: '', error: displayText(data.error || data.content, `LensAI gagal (${res.status})`) };
     }
 
-    return { content: data.content || 'Analisis telah selesai disusun.' };
+    return { content: displayText(data.content ?? data.body?.content ?? data.data?.content, 'Analisis telah selesai disusun.') };
   } catch (err) {
     return { content: '', error: err instanceof Error ? err.message : 'Gagal menghubungi LensAI.' };
   }
@@ -413,10 +444,10 @@ export async function adminSetPro(email: string, isPro: boolean): Promise<{ succ
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      return { success: false, error: data.error || `Gagal set Pro (${res.status})` };
+      return { success: false, error: displayText(data.error, `Gagal set Pro (${res.status})`) };
     }
 
-    return { success: true, message: data.message || 'Status Pro berhasil diperbarui' };
+    return { success: true, message: displayText(data.message, 'Status Pro berhasil diperbarui') };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Koneksi admin gagal' };
   }
@@ -432,10 +463,10 @@ export async function adminCreateTestUser(email: string, password: string, isPro
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      return { success: false, error: data.error || `Gagal membuat user (${res.status})` };
+      return { success: false, error: displayText(data.error, `Gagal membuat user (${res.status})`) };
     }
 
-    return { success: true, message: data.message || 'Akun uji berhasil dibuat' };
+    return { success: true, message: displayText(data.message, 'Akun uji berhasil dibuat') };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Koneksi admin gagal' };
   }
