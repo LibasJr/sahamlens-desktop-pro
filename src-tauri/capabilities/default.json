@@ -9,9 +9,7 @@
       "identifier": "http:default",
       "allow": [
         { "url": "https://sahamlens.id/*" },
-        { "url": "https://*.sahamlens.id/*" },
-        { "url": "http://*/*" },
-        { "url": "https://*/*" }
+        { "url": "https://*.sahamlens.id/*" }
       ]
     }
   ]
