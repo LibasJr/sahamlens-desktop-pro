@@ -28,14 +28,7 @@ jobs:
         run: npm run check
 
       - name: Build Tauri Desktop (.exe / .msi)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: '.'
-          tagName: v__VERSION__
-          releaseName: 'SahamLens Pro v__VERSION__'
-          releaseBody: 'SahamLens desktop shell — always in sync with sahamlens.id'
+        run: npm run tauri build
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
