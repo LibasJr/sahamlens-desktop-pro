@@ -1,5 +1,3 @@
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
-
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://sahamlens.id').replace(/\/+$/, '');
 
 const TOKEN_KEY = 'sahamlens.pro.token';
@@ -114,6 +112,7 @@ export async function safeFetch(pathOrUrl: string, init?: RequestInit): Promise<
   try {
     const isTauri = typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
     if (isTauri) {
+      const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
       return await tauriFetch(url, reqInit);
     }
   } catch (err) {
