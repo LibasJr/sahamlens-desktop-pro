@@ -7,6 +7,7 @@ use tauri::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
         .setup(|app| {
             // Build Tray Menu
             let show_i = MenuItem::with_id(app, "show", "Buka SahamLens Pro", true, None::<&str>)?;
@@ -15,7 +16,7 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::new()
                 .menu(&menu)
-                .tooltip("SahamLens Desktop")
+                .tooltip("SahamLens Desktop Pro")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {

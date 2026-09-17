@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Local-only capabilities. The remote SahamLens web app is deliberately denied Tauri IPC access.","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Desktop capabilities for SahamLens Pro Cockpit v2","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"http:default","allow":[{"url":"https://sahamlens.id/*"},{"url":"https://*.sahamlens.id/*"},{"url":"http://*/*"},{"url":"https://*/*"}]}]}}

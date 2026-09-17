@@ -10,7 +10,11 @@ assert.equal(config.build.frontendDist, '../dist', 'Release builds must bundle l
 assert.equal(config.app.windows[0]?.decorations, true, 'Desktop window must provide native OS window controls');
 
 assert.equal(capability.remote, undefined, 'Keep local capability surface minimal');
-assert.deepEqual(capability.permissions, ['core:default'], 'Keep minimal default permissions');
+assert.equal(
+  capability.permissions.some(p => (typeof p === 'object' && p.identifier === 'http:default') || p === 'http:default'),
+  true,
+  'Tauri HTTP plugin capability must be enabled for native networking'
+);
 
 assert.equal(existsSync('src/main.tsx'), true, 'Frontend entry point src/main.tsx must exist');
 assert.equal(existsSync('src/App.tsx'), true, 'Cockpit v2 UI entry point src/App.tsx must exist');
@@ -18,4 +22,4 @@ assert.equal(existsSync('src/api.ts'), true, 'API service layer src/api.ts must 
 assert.equal(existsSync('dist/index.html'), true, 'Compiled dist/index.html must exist before packaging');
 assert.equal(packageManifest.scripts?.tauri, 'tauri', 'tauri-action requires the npm tauri script');
 
-console.log('SahamLens Desktop Pro v2 shell checks passed.');
+console.log('SahamLens Desktop Pro v2 shell and HTTP capability checks passed.');

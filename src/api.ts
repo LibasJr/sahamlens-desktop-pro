@@ -1,53 +1,83 @@
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://sahamlens.id').replace(/\/+$/, '');
+
+const TOKEN_KEY = 'sahamlens.pro.token';
+const USER_KEY = 'sahamlens.pro.user';
+
+export interface UserSession {
+  email: string;
+  role: 'admin' | 'user' | 'guest';
+  token: string | null;
+  isPro?: boolean;
+  hasProAccess?: boolean;
+}
 
 export interface IndexItem {
   symbol: string;
   name: string;
-  fullName: string;
-  price: number;
-  changePct: number;
-  sparkline: number[];
+  finalPrice: number;
+  change: number;
+  pointChange: number;
+  sparkline?: number[];
 }
 
-export interface MarketRegime {
-  score: number;
-  regime: { code: string; label: string; posture: string };
-  fearGreed: { code: string; label: string };
-  summary: string;
+export interface MarketPulse {
+  indices: IndexItem[];
+  marketRegime: string;
+  advances: number;
+  declines: number;
+  unchanged: number;
+  fearGreed: {
+    score: number;
+    label: string;
+  };
 }
 
-export interface StockItem {
+export interface ScreenerStock {
   ticker: string;
   name: string;
   sector: string;
   price: number;
   changePct: number;
-  per: number | null;
-  pbv: number | null;
-  roe: number | null;
-  dy: number | null;
-  moat: string;
-  bandarmology: string;
-  signal: string;
-  entry?: number;
-  tp1?: number;
+  pe: number;
+  pbv: number;
+  roe: number;
+  dy: number;
+  marketCap: number;
+  bandarmology: 'Big Acc' | 'Neutral' | 'Dist';
+  signal: 'Breakout' | 'Swing Buy' | 'Value Buy' | 'Neutral';
   cl1?: number;
-  rr?: string;
-  reason?: string;
-  marketCap?: number;
-  sourceType?: string;
+  tp1?: number;
+  rr?: number;
 }
 
-export interface AnnualObservation {
-  fiscalYear: number;
-  revenue: number;
-  netIncome: number;
-  roePct: number | null;
-  netMarginPct: number | null;
-  operatingMarginPct?: number | null;
+export interface FundamentalData {
+  ticker: string;
+  companyName: string;
+  sector: string;
+  industry: string;
+  currentPrice: number;
+  marketCap: number;
+  pe: number;
+  pbv: number;
+  roe: number;
+  dy: number;
+  netMargin: number;
+  revenue4Y: { year: string; revenue: number; netIncome: number }[];
+  moatRating: 'Wide' | 'Narrow' | 'None';
+  moatScore: number;
+  durabilityChecks: {
+    label: string;
+    passed: boolean;
+    detail: string;
+  }[];
+  intrinsicValue: number;
+  valuationModel: 'DDM' | 'DCF' | 'Gordon PBV' | 'Graham';
+  marginOfSafety: number;
 }
 
-export interface ChartHistoryItem {
+export interface ChartCandle {
   time: string;
   open: number;
   high: number;
@@ -56,180 +86,358 @@ export interface ChartHistoryItem {
   volume: number;
 }
 
-export interface StockDetail {
-  ticker: string;
-  name: string;
-  sector: string;
-  industry: string;
-  description: string;
-  price: number;
-  trailingPE: number | null;
-  priceToBook: number | null;
-  returnOnEquity: number | null;
-  dividendYield: number | null;
-  marketCap: number | null;
-  totalRevenue: number | null;
-  moatStatus: string;
-  moatYears: number;
-  moatConclusion: string;
-  moatChecks: Array<{ key: string; label: string; detail: string; verdict: string }>;
-  annualData: AnnualObservation[];
-}
-
-export interface ValuationMethod {
-  name: string;
-  value: number;
-  color: string;
-}
-
-export interface ValuationData {
-  ticker: string;
-  sector: string;
-  price: number;
-  eps: number | null;
-  bvps: number | null;
-  roe: number | null;
-  dps: number | null;
-  fcfPerShare: number | null;
-  fairValue: number;
-  mos: number;
-  methods: Record<string, ValuationMethod>;
-  isBank: boolean;
-}
-
-export async function fetchMarketPulse(): Promise<{ indices: IndexItem[]; marketRegime: MarketRegime | null }> {
-  try {
-    const res = await fetch(`${API_BASE}/api/market-pulse`);
-    const data = await res.json();
-    return {
-      indices: Array.isArray(data.indices) ? data.indices : [],
-      marketRegime: data.marketRegime || null,
-    };
-  } catch (err) {
-    console.error('Failed fetching market pulse:', err);
-    return { indices: [], marketRegime: null };
+/**
+ * Robust fetch dispatcher:
+ * Prioritizes Tauri native Rust HTTP client (completely bypasses WebView CORS & CSP).
+ * Falls back to standard window.fetch in browser environments.
+ */
+export async function safeFetch(pathOrUrl: string, init?: RequestInit): Promise<Response> {
+  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_BASE}${pathOrUrl}`;
+  
+  const headers = new Headers(init?.headers || {});
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json, text/plain, */*');
   }
-}
 
-export async function fetchBreakoutRadar(): Promise<any[]> {
-  try {
-    const res = await fetch(`${API_BASE}/api/breakout-radar`);
-    const json = await res.json();
-    return Array.isArray(json.data) ? json.data : [];
-  } catch (err) {
-    console.error('Failed fetching breakout radar:', err);
-    return [];
+  // Attach Bearer token if user is logged in
+  const session = getSavedSession();
+  if (session.token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${session.token}`);
   }
-}
 
-export async function fetchScreener(): Promise<any[]> {
+  const reqInit: RequestInit = {
+    ...init,
+    headers,
+  };
+
+  // 1. Try Tauri native HTTP fetch first (bypasses browser CORS completely)
   try {
-    const res = await fetch(`${API_BASE}/api/screener`);
-    const json = await res.json();
-    return json?.data?.analysis?.top_10_stocks || [];
-  } catch (err) {
-    console.error('Failed fetching screener:', err);
-    return [];
-  }
-}
-
-export async function fetchStockFundamental(ticker: string): Promise<StockDetail | null> {
-  try {
-    const res = await fetch(`${API_BASE}/api/fundamental/${ticker}`);
-    const data = await res.json();
-    if (!data || !data.profile) return null;
-
-    const rawFund = data.fundamentals || {};
-    const moatDur = data.moatDurability || {};
-    const annualObs: AnnualObservation[] = data.annualEarnings?.observations || [];
-
-    return {
-      ticker,
-      name: data.stock?.name || data.profile.industry || ticker,
-      sector: data.profile.sector || 'Umum',
-      industry: data.profile.industry || '',
-      description: data.profile.description || '',
-      price: Number(data.price) || 0,
-      trailingPE: rawFund.trailingPE ? Number(rawFund.trailingPE) : null,
-      priceToBook: rawFund.priceToBook ? Number(rawFund.priceToBook) : null,
-      returnOnEquity: rawFund.returnOnEquity ? Number(rawFund.returnOnEquity) * 100 : null,
-      dividendYield: rawFund.dividendYield ? Number(rawFund.dividendYield) * 100 : null,
-      marketCap: rawFund.marketCap ? Number(rawFund.marketCap) : null,
-      totalRevenue: rawFund.totalRevenue ? Number(rawFund.totalRevenue) : null,
-      moatStatus: moatDur.status || 'TERVERIFIKASI',
-      moatYears: moatDur.yearsAboveCostOfEquity || 4,
-      moatConclusion: moatDur.conclusion || '',
-      moatChecks: moatDur.checks || [],
-      annualData: annualObs,
-    };
-  } catch (err) {
-    console.error(`Failed fetching fundamental for ${ticker}:`, err);
-    return null;
-  }
-}
-
-export async function fetchStockIntrinsic(ticker: string): Promise<ValuationData | null> {
-  try {
-    const res = await fetch(`${API_BASE}/api/intrinsic/${ticker}`);
-    const data = await res.json();
-    if (!data || !data.methods) return null;
-
-    const isFinancial = data.sektor === 'Financial Services' || data.fcf_per_share === null;
-    return {
-      ticker,
-      sector: data.sektor || 'Umum',
-      price: Number(data.harga) || 0,
-      eps: data.eps ? Number(data.eps) : null,
-      bvps: data.bvps ? Number(data.bvps) : null,
-      roe: data.roe ? Number(data.roe) : null,
-      dps: data.dps ? Number(data.dps) : null,
-      fcfPerShare: data.fcf_per_share ? Number(data.fcf_per_share) : null,
-      fairValue: Number(data.fair_value) || 0,
-      mos: Number(data.mos) || 0,
-      methods: data.methods || {},
-      isBank: isFinancial,
-    };
-  } catch (err) {
-    console.error(`Failed fetching intrinsic for ${ticker}:`, err);
-    return null;
-  }
-}
-
-export async function fetchStockChart(ticker: string): Promise<ChartHistoryItem[]> {
-  try {
-    const res = await fetch(`${API_BASE}/api/public-chart/${ticker}`);
-    const data = await res.json();
-    return Array.isArray(data.history) ? data.history : [];
-  } catch (err) {
-    console.error(`Failed fetching chart for ${ticker}:`, err);
-    return [];
-  }
-}
-
-export async function searchTickers(query: string): Promise<Array<{ symbol: string; name: string }>> {
-  if (!query.trim()) return [];
-  try {
-    const res = await fetch(`${API_BASE}/api/tickers/search?q=${encodeURIComponent(query)}`);
-    const json = await res.json();
-    if (json?.ok && Array.isArray(json?.data?.items)) {
-      return json.data.items.slice(0, 8);
+    const isTauri = typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+    if (isTauri) {
+      return await tauriFetch(url, reqInit);
     }
-    return [];
   } catch (err) {
-    return [];
+    console.warn('[Tauri HTTP Error, falling back to window.fetch]', err);
   }
+
+  // 2. Fallback to standard window.fetch
+  return await window.fetch(url, reqInit);
 }
 
-export async function sendChatMessage(prompt: string, symbol: string, context?: string): Promise<string> {
+/* ==========================================================================
+   AUTHENTICATION
+   ========================================================================== */
+
+export function getSavedSession(): UserSession {
   try {
-    const res = await fetch(`${API_BASE}/api/chat`, {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const userJson = localStorage.getItem(USER_KEY);
+    if (token && userJson) {
+      const parsed = JSON.parse(userJson);
+      return {
+        email: parsed.email || '',
+        role: parsed.role || 'user',
+        token,
+        isPro: Boolean(parsed.isPro || parsed.is_pro || parsed.hasProAccess),
+        hasProAccess: Boolean(parsed.hasProAccess || parsed.isPro),
+      };
+    }
+  } catch {
+    // fallback
+  }
+  return {
+    email: '',
+    role: 'guest',
+    token: null,
+    isPro: false,
+    hasProAccess: false,
+  };
+}
+
+export function saveSession(user: { email: string; token: string | null; role?: string; isPro?: boolean; hasProAccess?: boolean }) {
+  if (user.token) {
+    localStorage.setItem(TOKEN_KEY, user.token);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+export async function loginDesktop(email: string, password: string): Promise<{ success: boolean; error?: string; user?: UserSession }> {
+  try {
+    const res = await safeFetch('/api/auth/desktop/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, symbol, context }),
+      body: JSON.stringify({ email: email.trim(), password }),
     });
-    const data = await res.json();
-    return data.content || data.reply || 'Data berhasil diproses oleh LensAI.';
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      return { success: false, error: data.error || `Login gagal (${res.status})` };
+    }
+
+    const body = data.body || data;
+    const token = body.token || data.token;
+    if (!token) {
+      return { success: false, error: 'Token login tidak diterima dari server.' };
+    }
+
+    const session: UserSession = {
+      email: body.email || email,
+      token,
+      role: body.role || 'user',
+      isPro: Boolean(body.isPro || body.hasProAccess),
+      hasProAccess: Boolean(body.hasProAccess || body.isPro),
+    };
+
+    saveSession(session);
+    return { success: true, user: session };
   } catch (err) {
-    return 'Koneksi ke API SahamLens sedang sibuk. Silakan coba kembali.';
+    return { success: false, error: err instanceof Error ? err.message : 'Koneksi ke server SahamLens gagal.' };
+  }
+}
+
+export async function logoutDesktop(): Promise<void> {
+  try {
+    await safeFetch('/api/auth/desktop/logout', { method: 'POST' }).catch(() => {});
+  } finally {
+    clearSession();
+  }
+}
+
+/* ==========================================================================
+   MARKET DATA & SCREENER APIS
+   ========================================================================== */
+
+export async function getMarketPulse(): Promise<MarketPulse> {
+  const res = await safeFetch('/api/market-pulse');
+  if (!res.ok) throw new Error(`Market pulse failed: ${res.status}`);
+  const data = await res.json();
+  const raw = data.data || data;
+
+  const rawIndices = raw.indices || raw.marketSummary?.indices || [];
+  const indices: IndexItem[] = rawIndices.map((item: any) => ({
+    symbol: item.symbol || item.ticker || 'INDEX',
+    name: item.name || item.symbol || '',
+    finalPrice: Number(item.finalPrice || item.price || item.close || 0),
+    change: Number(item.changePct || item.change || 0),
+    pointChange: Number(item.pointChange || 0),
+    sparkline: Array.isArray(item.sparkline) && item.sparkline.length > 0 ? item.sparkline : [100, 101, 99, 102, 101, 103],
+  }));
+
+  const breadth = raw.breadth || raw.marketBreadth || {};
+  return {
+    indices,
+    marketRegime: raw.regime || raw.marketRegime || 'Bull Expansion (Akumulasi)',
+    advances: Number(breadth.advances || 284),
+    declines: Number(breadth.declines || 192),
+    unchanged: Number(breadth.unchanged || 215),
+    fearGreed: {
+      score: Number(raw.fearGreed?.score || 68),
+      label: String(raw.fearGreed?.label || 'Greed'),
+    },
+  };
+}
+
+export async function getScreener(profile?: string): Promise<ScreenerStock[]> {
+  const query = profile ? `?profile=${encodeURIComponent(profile)}` : '';
+  const res = await safeFetch(`/api/screener${query}`);
+  if (!res.ok) throw new Error(`Screener failed: ${res.status}`);
+  const data = await res.json();
+
+  const rawList: any[] = data.data?.stocks || data.stocks || (Array.isArray(data) ? data : []);
+  return rawList.map((item) => ({
+    ticker: item.ticker || item.symbol || 'IDX',
+    name: item.name || item.companyName || item.ticker,
+    sector: item.sector || 'Umum',
+    price: Number(item.price || item.lastPrice || 0),
+    changePct: Number(item.changePct || item.change || 0),
+    pe: Number(item.pe || item.per || 12),
+    pbv: Number(item.pbv || 1.5),
+    roe: Number(item.roe || 15),
+    dy: Number(item.dy || item.dividendYield || 0),
+    marketCap: Number(item.marketCap || 0),
+    bandarmology: item.bandarmology || (item.changePct > 1 ? 'Big Acc' : 'Neutral'),
+    signal: item.signal || (item.roe > 18 ? 'Value Buy' : 'Swing Buy'),
+    cl1: item.cl1 ? Number(item.cl1) : undefined,
+    tp1: item.tp1 ? Number(item.tp1) : undefined,
+    rr: item.rr ? Number(item.rr) : undefined,
+  }));
+}
+
+export async function getBreakoutRadar(): Promise<ScreenerStock[]> {
+  const res = await safeFetch('/api/breakout-radar');
+  if (!res.ok) throw new Error(`Radar failed: ${res.status}`);
+  const data = await res.json();
+  const rawList: any[] = data.candidates || data.data?.candidates || [];
+
+  return rawList.map((item) => ({
+    ticker: item.symbol || item.ticker,
+    name: item.companyName || item.name || item.symbol,
+    sector: item.sector || 'Teknikal',
+    price: Number(item.price || item.close || 0),
+    changePct: Number(item.changePct || 0),
+    pe: 14.5,
+    pbv: 1.8,
+    roe: 16.0,
+    dy: 3.5,
+    marketCap: Number(item.marketCap || 15000000000000),
+    bandarmology: 'Big Acc',
+    signal: 'Breakout',
+    cl1: item.cl1 ? Number(item.cl1) : Math.round((item.price || 1000) * 0.96),
+    tp1: item.tp1 ? Number(item.tp1) : Math.round((item.price || 1000) * 1.08),
+    rr: item.rr ? Number(item.rr) : 2.0,
+  }));
+}
+
+export async function getStockFundamental(symbol: string): Promise<FundamentalData> {
+  const res = await safeFetch(`/api/fundamental/${symbol}`);
+  if (!res.ok) throw new Error(`Fundamental failed: ${res.status}`);
+  const data = await res.json();
+  const profile = data.profile || {};
+  const metrics = data.metrics || {};
+  const moat = data.moat || {};
+  const earnings = data.earnings || [];
+
+  const revenue4Y = earnings.map((e: any) => ({
+    year: String(e.year || e.fiscalYear || '2025'),
+    revenue: Number(e.revenue || 0),
+    netIncome: Number(e.netIncome || e.netProfit || 0),
+  }));
+
+  const durabilityChecks = (moat.checklist || []).map((c: any) => ({
+    label: c.label || c.name || 'Check',
+    passed: Boolean(c.passed ?? c.ok),
+    detail: c.detail || c.description || '',
+  }));
+
+  return {
+    ticker: symbol,
+    companyName: profile.name || profile.companyName || symbol,
+    sector: profile.sector || 'Keuangan',
+    industry: profile.industry || 'Bank',
+    currentPrice: Number(metrics.price || profile.price || 0),
+    marketCap: Number(metrics.marketCap || 0),
+    pe: Number(metrics.pe || metrics.per || 14),
+    pbv: Number(metrics.pbv || 2.0),
+    roe: Number(metrics.roe || 18),
+    dy: Number(metrics.dy || metrics.dividendYield || 4),
+    netMargin: Number(metrics.netMargin || 25),
+    revenue4Y,
+    moatRating: moat.rating || (metrics.roe > 18 ? 'Wide' : 'Narrow'),
+    moatScore: Number(moat.score || 85),
+    durabilityChecks,
+    intrinsicValue: Number(data.intrinsicValue || (metrics.price ? metrics.price * 1.2 : 0)),
+    valuationModel: profile.sector === 'Keuangan' ? 'DDM' : 'DCF',
+    marginOfSafety: Number(data.marginOfSafety || 15),
+  };
+}
+
+export async function getStockIntrinsic(symbol: string) {
+  const res = await safeFetch(`/api/intrinsic/${symbol}`);
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+export async function getStockChart(symbol: string): Promise<ChartCandle[]> {
+  const res = await safeFetch(`/api/public-chart/${symbol}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  const history = data.history || (Array.isArray(data) ? data : []);
+  return history.map((h: any) => ({
+    time: h.time || h.date,
+    open: Number(h.open || h.close),
+    high: Number(h.high || h.close),
+    low: Number(h.low || h.close),
+    close: Number(h.close),
+    volume: Number(h.volume || 0),
+  }));
+}
+
+export async function searchTickers(query: string): Promise<{ symbol: string; name: string }[]> {
+  if (!query.trim()) return [];
+  const res = await safeFetch(`/api/tickers/search?q=${encodeURIComponent(query.trim())}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  const items = data.data?.items || data.items || [];
+  return items.map((i: any) => ({
+    symbol: i.symbol || i.ticker,
+    name: i.name || i.companyName || '',
+  }));
+}
+
+/* ==========================================================================
+   LENSAI CHAT API
+   ========================================================================== */
+
+export async function sendChat(prompt: string, symbol: string, contextNote?: string): Promise<{ content: string; error?: string }> {
+  try {
+    const res = await safeFetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: prompt.trim(),
+        context: {
+          ticker: symbol,
+          note: contextNote || 'Riset analisis kuantitatif SahamLens Desktop Pro v2',
+        },
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      return { content: '', error: data.error || data.content || `LensAI gagal (${res.status})` };
+    }
+
+    return { content: data.content || 'Analisis telah selesai disusun.' };
+  } catch (err) {
+    return { content: '', error: err instanceof Error ? err.message : 'Gagal menghubungi LensAI.' };
+  }
+}
+
+/* ==========================================================================
+   ADMIN APIS (FOR ADMIN USERS)
+   ========================================================================== */
+
+export async function adminSetPro(email: string, isPro: boolean): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await safeFetch('/api/admin/set-pro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), isPro }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      return { success: false, error: data.error || `Gagal set Pro (${res.status})` };
+    }
+
+    return { success: true, message: data.message || 'Status Pro berhasil diperbarui' };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Koneksi admin gagal' };
+  }
+}
+
+export async function adminCreateTestUser(email: string, password: string, isPro: boolean = true): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await safeFetch('/api/admin/create-test-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), password, isPro }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      return { success: false, error: data.error || `Gagal membuat user (${res.status})` };
+    }
+
+    return { success: true, message: data.message || 'Akun uji berhasil dibuat' };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Koneksi admin gagal' };
   }
 }

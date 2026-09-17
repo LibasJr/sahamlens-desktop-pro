@@ -1,6 +1,6 @@
 [package]
 name = "sahamlens-desktop-pro"
-version = "1.0.0"
+version = "2.0.0"
 description = "Secure desktop shell for SahamLens"
 authors = ["SahamLens Team"]
 edition = "2021"
@@ -14,3 +14,4 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-http = "2"
