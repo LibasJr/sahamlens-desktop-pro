@@ -1,4 +1,4 @@
-import { displayText, marketRegimeText, numericValue } from './normalize';
+import { displayText, marketRegimeText, numericValue } from './normalize.ts';
 
 const rawApiBase =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) ||
