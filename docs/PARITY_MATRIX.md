@@ -16,6 +16,7 @@ Status definitions:
 - **Partial**: related workflow exists, but contract, behavior, controls, or depth differs.
 - **Missing**: no desktop counterpart.
 - **Blocked**: desktop cannot reach equivalent behavior because web has no native-callable API or authorization contract.
+- **Excluded**: source route is intentionally non-product/internal and must not be copied into a release build.
 
 Priority definitions: **P0** security, ownership, destructive action, or misleading-data risk; **P1** primary research/operations workflow; **P2** secondary workflow; **P3** presentation/polish.
 
@@ -23,7 +24,7 @@ Priority definitions: **P0** security, ownership, destructive action, or mislead
 
 Desktop is a separate React/Tauri implementation despite stale README claims that it loads the web directly (`desktop:README.md:5-17` versus bundled Vite configuration at `desktop:src-tauri/tauri.conf.json:6-10` and cockpit source at `desktop:src/App.tsx:57-2182`). Therefore parity is measured from executable source, not README intent.
 
-Feature/workflow tally in sections 1–4: **Exact 0; Partial 34; Missing 49; Blocked 8**. Endpoint-level exactness exists for a small subset and is recorded separately in section 5; it does not make the corresponding full UI workflow exact.
+Feature/workflow tally in sections 1–4: **Exact 0; Partial 34; Missing 49; Blocked 8; Excluded 2** (93 items across 60 web pages and core navigation/chart boundaries). Endpoint-level exactness exists for a small subset and is recorded separately in section 5; it does not make the corresponding full UI workflow exact.
 
 No audited LensTechnical feature is exact. Desktop has partial candlestick, indicator-card, support/resistance, and trade-plan surfaces, but lacks interactive chart navigation, timeframe selection, chart-type selection, synchronized indicator panes, hover inspection, and pattern parity. Admin parity is two partial mutations plus partial account-admin login out of twenty page workflows. User parity is concentrated in Beranda, Screener, Teknikal, Fundamental, Valuasi, Compare, LensAI, and login/logout; most deeper workflows remain missing.
 
@@ -71,7 +72,7 @@ No audited LensTechnical feature is exact. Desktop has partial candlestick, indi
 
 | Endpoint | Method/auth | Contract | Desktop status | Acceptance criteria |
 |---|---|---|---|---|
-| `/api/public-chart/[ticker]` | GET; public; shared public-compute budget (`app/api/public-chart/[ticker]/route.ts:11-23`). | Query `tf`; `{ticker,history[]}` where bars include `time,open,high,low,close,adjClose,price,volume` and optional session provenance (`route.ts:81-95,125-134,171-204`). | Partial: consumes history but sends no `tf` and drops provenance (`desktop:src/api.ts:436-448`). | Exact timeframe mapping, typed validation, explicit 429/retry, no credential on public call, and provenance retained. |
+| `/api/public-chart/[ticker]` | GET; public; shared public-compute budget (`app/api/public-chart/[ticker]/route.ts:11-23`). | Query `tf`; `{ticker,history[]}` where bars include `time,open,high,low,close,adjClose,price,volume` and optional session provenance (`app/api/public-chart/[ticker]/route.ts:81-95,125-134,171-204`). | Partial: consumes history but sends no `tf` and drops provenance (`desktop:src/api.ts:436-448`). | Exact timeframe mapping, typed validation, explicit 429/retry, no credential on public call, and provenance retained. |
 | `/api/stock/[ticker]` | GET; session/internal-service; guest 401, non-Pro daily quota then 402: `modules/technical/service/stock-analysis-access.service.ts:36-91`. | Legacy root plus `data`; full analysis includes trade plan, analyzers, consensus, scoring, quality/audit/decision and `stock.history`: `modules/technical/service/stock-analysis-response.service.ts:184-258`; stale-cache success possible `modules/technical/controller/stock-analysis.controller.ts:89-115`. | Partial: expects `body.history`, not `body.stock.history`; silently falls back to public-chart/local synthesis: `desktop:src/api.ts:549-573,637-716`. | Contract test covers envelope, `stock.history`, bearer acceptance, 401/402/429/stale/5xx; reduced fallback is labeled and contains no fabricated metrics. |
 
 ### 2.3 Web-reference defects that must not be copied
@@ -122,6 +123,8 @@ No audited LensTechnical feature is exact. Desktop has partial candlestick, indi
 | `/multi-agent` | `app/multi-agent/page.tsx:19,28`; `components/Sidebar.tsx:114-125` | Public informational/orphaned. | LensAI only. | Partial | P2; capability truthfulness | Linked intentionally or removed; claims map to executable behavior. |
 | `/status` | `app/status/page.tsx:10-12,29-37,55`; `components/SiteFooter.tsx:25` | Public `/api/health`; parses 503 body. | Only backend URL text: `desktop:src/App.tsx:1998-2001`. | Missing | P2; redacted health | Healthy/degraded/network errors differ; no operator detail leaks. |
 | `/privacy`, `/terms`, `/disclaimer` | `app/privacy/page.tsx:3`; `app/terms/page.tsx:3`; `app/disclaimer/page.tsx:3`; `components/SiteFooter.tsx:21-26` | Public legal. | None. | Missing | P2; legal metadata | Unique canonical/title/effective date/return path and required contact/controller details. |
+| `/_workbench` | Internal visual primitive workbench; production calls `notFound()`, plus `noindex`: `app/_workbench/page.tsx:12-28,37-39`. | No product counterpart required. | Excluded | —; developer-only source route | Release desktop must not expose sample-data workbench; reusable primitives are audited through real product screens. |
+| `/docs/admin/decision-lab-role-stack` | Static, `noindex` architecture explainer: `app/docs/admin/decision-lab-role-stack/page.tsx:1-4,16-23`. | No product counterpart required; Decision Lab workflow tracked in section 4. | Excluded | —; internal documentation | Keep architecture claims in maintained documentation; do not create duplicate desktop navigation or imply independent AI agents. |
 
 ## 4. Admin menu, submenu, and workflow inventory
 
